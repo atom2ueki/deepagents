@@ -21,6 +21,7 @@ def agent_builder(
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
     is_async: bool = False,
+    handle_tool_errors: bool = True,
 ):
     if model is None:
         model = get_default_model()
@@ -48,6 +49,18 @@ def agent_builder(
     if middleware is not None:
         deepagent_middleware.extend(middleware)
 
+    # Wrap tools with error handling if requested
+    if handle_tool_errors:
+        wrapped_tools = []
+        for tool in tools:
+            if isinstance(tool, BaseTool):
+                # Set handle_tool_error on BaseTool instances
+                tool.handle_tool_error = True
+                wrapped_tools.append(tool)
+            else:
+                wrapped_tools.append(tool)
+        tools = wrapped_tools
+
     return create_agent(
         model,
         prompt=instructions + "\n\n" + BASE_AGENT_PROMPT,
@@ -66,6 +79,7 @@ def create_deep_agent(
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
     tool_configs: Optional[dict[str, bool | ToolConfig]] = None,
+    handle_tool_errors: bool = True,
 ):
     """Create a deep agent.
     This agent will by default have access to a tool to write todos (write_todos),
@@ -86,6 +100,7 @@ def create_deep_agent(
         context_schema: The schema of the deep agent.
         checkpointer: Optional checkpointer for persisting agent state between runs.
         tool_configs: Optional Dict[str, HumanInTheLoopConfig] mapping tool names to interrupt configs.
+        handle_tool_errors: If True, tool errors will be returned as messages instead of raising exceptions.
     """
     return agent_builder(
         tools=tools,
@@ -97,6 +112,7 @@ def create_deep_agent(
         checkpointer=checkpointer,
         tool_configs=tool_configs,
         is_async=False,
+        handle_tool_errors=handle_tool_errors,
     )
 
 def async_create_deep_agent(
@@ -108,6 +124,7 @@ def async_create_deep_agent(
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
     tool_configs: Optional[dict[str, bool | ToolConfig]] = None,
+    handle_tool_errors: bool = True,
 ):
     """Create a deep agent.
     This agent will by default have access to a tool to write todos (write_todos),
@@ -128,6 +145,7 @@ def async_create_deep_agent(
         context_schema: The schema of the deep agent.
         checkpointer: Optional checkpointer for persisting agent state between runs.
         tool_configs: Optional Dict[str, HumanInTheLoopConfig] mapping tool names to interrupt configs.
+        handle_tool_errors: If True, tool errors will be returned as messages instead of raising exceptions.
     """
     return agent_builder(
         tools=tools,
@@ -139,4 +157,5 @@ def async_create_deep_agent(
         checkpointer=checkpointer,
         tool_configs=tool_configs,
         is_async=True,
+        handle_tool_errors=handle_tool_errors,
     )
