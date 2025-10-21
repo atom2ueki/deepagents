@@ -1,32 +1,42 @@
-from typing import Sequence, Union, Callable, Any, Type, Optional
+from typing import Sequence, Union, Callable, Any, Type, Optional, TYPE_CHECKING
 from langchain_core.tools import BaseTool
 from langchain_core.language_models import LanguageModelLike
 from langgraph.types import Checkpointer
-from langchain.agents import create_agent
+from langchain.agents import create_agent as langchain_create_agent
 from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware, HumanInTheLoopMiddleware
 from langchain.agents.middleware.human_in_the_loop import ToolConfig
 from langchain.agents.middleware.prompt_caching import AnthropicPromptCachingMiddleware
-from deepagents.middleware import PlanningMiddleware, FilesystemMiddleware, SubAgentMiddleware
+from deepagents.middleware import ObserverMiddleware, PlanningMiddleware, FilesystemMiddleware, SubAgentMiddleware
+from deepagents.context import AgentContext
 from deepagents.prompts import BASE_AGENT_PROMPT
 from deepagents.model import get_default_model
-from deepagents.types import SubAgent, CustomSubAgent
+
+if TYPE_CHECKING:
+    from deepagents.agent import Agent
+
+from deepagents.agent import ToolAgent
 
 def agent_builder(
     tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]],
     instructions: str,
+    name: str,
+    description: str,
+    fg_color: str,
+    bg_color: str,
     middleware: Optional[list[AgentMiddleware]] = None,
     tool_configs: Optional[dict[str, bool | ToolConfig]] = None,
     model: Optional[Union[str, LanguageModelLike]] = None,
-    subagents: Optional[list[SubAgent | CustomSubAgent]] = None,
+    subagents: Optional[list["Agent"]] = None,
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
     is_async: bool = False,
     handle_tool_errors: bool = True,
-):
+) -> "ToolAgent":
     if model is None:
         model = get_default_model()
 
     deepagent_middleware = [
+        ObserverMiddleware(),  # Agent name from runtime.context.agent_name
         PlanningMiddleware(),
         FilesystemMiddleware(),
         SubAgentMiddleware(
@@ -61,50 +71,68 @@ def agent_builder(
                 wrapped_tools.append(tool)
         tools = wrapped_tools
 
-    return create_agent(
+    graph = langchain_create_agent(
         model,
         system_prompt=instructions + "\n\n" + BASE_AGENT_PROMPT,
         tools=tools,
         middleware=deepagent_middleware,
-        context_schema=context_schema,
+        context_schema=context_schema or AgentContext,
         checkpointer=checkpointer,
     )
+
+    # Wrap in ToolAgent for OOP interface with auto-context injection
+    agent = ToolAgent(
+        name=name,
+        description=description,
+        graph=graph,
+        fg_color=fg_color,
+        bg_color=bg_color,
+    )
+    # Store subagents for access (e.g., registering colors)
+    agent.subagents = subagents if subagents is not None else []
+    return agent
 
 def create_deep_agent(
     tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]] = [],
     instructions: str = "",
+    name: str = "main",
+    description: str = "",
+    fg_color: str = "#000000",
+    bg_color: str = "#ffffff",
     middleware: Optional[list[AgentMiddleware]] = None,
     model: Optional[Union[str, LanguageModelLike]] = None,
-    subagents: Optional[list[SubAgent | CustomSubAgent]] = None,
+    subagents: Optional[list["Agent"]] = None,
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
     tool_configs: Optional[dict[str, bool | ToolConfig]] = None,
     handle_tool_errors: bool = True,
-):
-    """Create a deep agent.
-    This agent will by default have access to a tool to write todos (write_todos),
-    four file editing tools: write_file, ls, read_file, edit_file, and a tool to call subagents.
+) -> "ToolAgent":
+    """Create a ToolAgent (agent built from tools and instructions).
+
+    Returns a ToolAgent instance with auto-context injection.
+
     Args:
-        tools: The tools the agent should have access to.
-        instructions: The additional instructions the agent should have. Will go in
-            the system prompt.
-        model: The model to use.
-        subagents: The subagents to use. Each subagent should be a dictionary with the
-            following keys:
-                - `name`
-                - `description` (used by the main agent to decide whether to call the sub agent)
-                - `prompt` (used as the system prompt in the subagent)
-                - (optional) `tools`
-                - (optional) `model` (either a LanguageModelLike instance or dict settings)
-                - (optional) `middleware` (list of AgentMiddleware)
-        context_schema: The schema of the deep agent.
-        checkpointer: Optional checkpointer for persisting agent state between runs.
-        tool_configs: Optional Dict[str, HumanInTheLoopConfig] mapping tool names to interrupt configs.
-        handle_tool_errors: If True, tool errors will be returned as messages instead of raising exceptions.
+        tools: Tools available to the agent
+        instructions: System prompt/instructions for the agent
+        name: Agent name (used for event emissions)
+        description: Agent description (used by parent agents for delegation)
+        model: Model to use
+        subagents: List of Agent instances this agent can delegate to
+        context_schema: Custom context schema
+        checkpointer: Optional checkpointer for persistence
+        tool_configs: Tool interrupt configurations
+        handle_tool_errors: If True, tool errors become messages instead of exceptions
+
+    Returns:
+        ToolAgent instance with auto-context injection
     """
     return agent_builder(
         tools=tools,
         instructions=instructions,
+        name=name,
+        description=description,
+        fg_color=fg_color,
+        bg_color=bg_color,
         middleware=middleware,
         model=model,
         subagents=subagents,
@@ -118,38 +146,45 @@ def create_deep_agent(
 def async_create_deep_agent(
     tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]] = [],
     instructions: str = "",
+    name: str = "main",
+    description: str = "",
+    fg_color: str = "#000000",
+    bg_color: str = "#ffffff",
     middleware: Optional[list[AgentMiddleware]] = None,
     model: Optional[Union[str, LanguageModelLike]] = None,
-    subagents: Optional[list[SubAgent | CustomSubAgent]] = None,
+    subagents: Optional[list["Agent"]] = None,
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
     tool_configs: Optional[dict[str, bool | ToolConfig]] = None,
     handle_tool_errors: bool = True,
-):
-    """Create a deep agent.
-    This agent will by default have access to a tool to write todos (write_todos),
-    four file editing tools: write_file, ls, read_file, edit_file, and a tool to call subagents.
+) -> "ToolAgent":
+    """Create a ToolAgent (async version).
+
+    Returns a ToolAgent instance with auto-context injection.
+
     Args:
-        tools: The tools the agent should have access to.
-        instructions: The additional instructions the agent should have. Will go in
-            the system prompt.
-        model: The model to use.
-        subagents: The subagents to use. Each subagent should be a dictionary with the
-            following keys:
-                - `name`
-                - `description` (used by the main agent to decide whether to call the sub agent)
-                - `prompt` (used as the system prompt in the subagent)
-                - (optional) `tools`
-                - (optional) `model` (either a LanguageModelLike instance or dict settings)
-                - (optional) `middleware` (list of AgentMiddleware)
-        context_schema: The schema of the deep agent.
-        checkpointer: Optional checkpointer for persisting agent state between runs.
-        tool_configs: Optional Dict[str, HumanInTheLoopConfig] mapping tool names to interrupt configs.
-        handle_tool_errors: If True, tool errors will be returned as messages instead of raising exceptions.
+        tools: Tools available to the agent
+        instructions: System prompt/instructions for the agent
+        name: Agent name (used for event emissions)
+        description: Agent description (used by parent agents for delegation)
+        color: Optional color for the agent (auto-assigned if None)
+        model: Model to use
+        subagents: List of Agent instances this agent can delegate to
+        context_schema: Custom context schema
+        checkpointer: Optional checkpointer for persistence
+        tool_configs: Tool interrupt configurations
+        handle_tool_errors: If True, tool errors become messages instead of exceptions
+
+    Returns:
+        ToolAgent instance with auto-context injection
     """
     return agent_builder(
         tools=tools,
         instructions=instructions,
+        name=name,
+        description=description,
+        fg_color=fg_color,
+        bg_color=bg_color,
         middleware=middleware,
         model=model,
         subagents=subagents,
