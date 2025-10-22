@@ -1,3 +1,4 @@
 -e ../../
 langgraph-cli[inmem]
 tavily-python
+python-dotenv

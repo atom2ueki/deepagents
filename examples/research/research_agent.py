@@ -1,9 +1,13 @@
 import os
 from typing import Literal
 
+from dotenv import load_dotenv
 from tavily import TavilyClient
 
 from deepagents import create_deep_agent
+
+# Load environment variables from .env file
+load_dotenv()
 
 # It's best practice to initialize the client once and reuse it.
 tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
@@ -31,12 +35,14 @@ Conduct thorough research and then reply to the user with a detailed answer to t
 
 only your FINAL answer will be passed on to the user. They will have NO knowledge of anything except your final message, so your final report should be your final message!"""
 
-research_sub_agent = {
-    "name": "research-agent",
-    "description": "Used to research more in depth questions. Only give this researcher one topic at a time. Do not pass multiple sub questions to this researcher. Instead, you should break down a large topic into the necessary components, and then call multiple research agents in parallel, one for each sub question.",
-    "prompt": sub_research_prompt,
-    "tools": [internet_search],
-}
+research_sub_agent = create_deep_agent(
+    name="research-agent",
+    description="Used to research more in depth questions. Only give this researcher one topic at a time. Do not pass multiple sub questions to this researcher. Instead, you should break down a large topic into the necessary components, and then call multiple research agents in parallel, one for each sub question.",
+    instructions=sub_research_prompt,
+    tools=[internet_search],
+    fg_color="#4A90E2",
+    bg_color="#E3F2FD",
+)
 
 sub_critique_prompt = """You are a dedicated editor. You are being tasked to critique a report.
 
@@ -60,11 +66,14 @@ Things to check:
 - Check that the article has a clear structure, fluent language, and is easy to understand.
 """
 
-critique_sub_agent = {
-    "name": "critique-agent",
-    "description": "Used to critique the final report. Give this agent some information about how you want it to critique the report.",
-    "prompt": sub_critique_prompt,
-}
+critique_sub_agent = create_deep_agent(
+    name="critique-agent",
+    description="Used to critique the final report. Give this agent some information about how you want it to critique the report.",
+    instructions=sub_critique_prompt,
+    tools=[internet_search],
+    fg_color="#E91E63",
+    bg_color="#FCE4EC",
+)
 
 
 # Prompt prefix to steer the agent to be an expert researcher
@@ -159,7 +168,11 @@ Use this to run an internet search for a given query. You can specify the number
 
 # Create the agent
 agent = create_deep_agent(
+    name="research-orchestrator",
+    description="Main orchestrator for research tasks",
     tools=[internet_search],
     instructions=research_instructions,
     subagents=[critique_sub_agent, research_sub_agent],
+    fg_color="#2E7D32",
+    bg_color="#E8F5E9",
 ).with_config({"recursion_limit": 1000})

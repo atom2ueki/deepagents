@@ -2,14 +2,23 @@ from typing import Sequence, Union, Callable, Any, Type, Optional, TYPE_CHECKING
 from langchain_core.tools import BaseTool
 from langchain_core.language_models import LanguageModelLike
 from langgraph.types import Checkpointer
+from langgraph.store.base import BaseStore
 from langchain.agents import create_agent as langchain_create_agent
 from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware, HumanInTheLoopMiddleware, InterruptOnConfig, TodoListMiddleware
+from langchain_anthropic import ChatAnthropic
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from deepagents.middleware import ObserverMiddleware, FilesystemMiddleware, SubAgentMiddleware, PatchToolCallsMiddleware
 from deepagents.context import AgentContext
-from deepagents.model import get_default_model
 
 BASE_AGENT_PROMPT = "In order to complete the objective that the user asks of you, you have access to a number of standard tools."
+
+def get_default_model() -> ChatAnthropic:
+    """Get the default model for deep agents.
+
+    Returns:
+        ChatAnthropic instance configured with Claude Sonnet 4.5.
+    """
+    return ChatAnthropic(model_name="claude-sonnet-4-5-20250929", max_tokens=20000)
 
 if TYPE_CHECKING:
     from deepagents.agent import Agent
@@ -29,6 +38,8 @@ def agent_builder(
     subagents: Optional[list["Agent"]] = None,
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
+    store: Optional[BaseStore] = None,
+    use_longterm_memory: bool = False,
     is_async: bool = False,
     handle_tool_errors: bool = True,
 ) -> "ToolAgent":
@@ -38,12 +49,13 @@ def agent_builder(
     deepagent_middleware = [
         ObserverMiddleware(),  # Agent name from runtime.context.agent_name
         TodoListMiddleware(),
-        FilesystemMiddleware(),
+        FilesystemMiddleware(long_term_memory=use_longterm_memory),
         SubAgentMiddleware(
             default_subagent_tools=tools,   # NOTE: These tools are piped to the general-purpose subagent.
             subagents=subagents if subagents is not None else [],
             model=model,
             is_async=is_async,
+            use_longterm_memory=use_longterm_memory,
         ),
         SummarizationMiddleware(
             model=model,
@@ -79,6 +91,7 @@ def agent_builder(
         middleware=deepagent_middleware,
         context_schema=context_schema or AgentContext,
         checkpointer=checkpointer,
+        store=store,
     )
 
     # Wrap in ToolAgent for OOP interface with auto-context injection
@@ -105,6 +118,8 @@ def create_deep_agent(
     subagents: Optional[list["Agent"]] = None,
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
+    store: Optional[BaseStore] = None,
+    use_longterm_memory: bool = False,
     tool_configs: Optional[dict[str, bool | InterruptOnConfig]] = None,
     handle_tool_errors: bool = True,
 ) -> "ToolAgent":
@@ -121,6 +136,8 @@ def create_deep_agent(
         subagents: List of Agent instances this agent can delegate to
         context_schema: Custom context schema
         checkpointer: Optional checkpointer for persistence
+        store: Optional store for persistent long-term memory
+        use_longterm_memory: Whether to enable long-term memory (requires store)
         tool_configs: Tool interrupt configurations
         handle_tool_errors: If True, tool errors become messages instead of exceptions
 
@@ -139,6 +156,8 @@ def create_deep_agent(
         subagents=subagents,
         context_schema=context_schema,
         checkpointer=checkpointer,
+        store=store,
+        use_longterm_memory=use_longterm_memory,
         tool_configs=tool_configs,
         is_async=False,
         handle_tool_errors=handle_tool_errors,
@@ -156,6 +175,8 @@ def async_create_deep_agent(
     subagents: Optional[list["Agent"]] = None,
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
+    store: Optional[BaseStore] = None,
+    use_longterm_memory: bool = False,
     tool_configs: Optional[dict[str, bool | InterruptOnConfig]] = None,
     handle_tool_errors: bool = True,
 ) -> "ToolAgent":
@@ -168,11 +189,12 @@ def async_create_deep_agent(
         instructions: System prompt/instructions for the agent
         name: Agent name (used for event emissions)
         description: Agent description (used by parent agents for delegation)
-        color: Optional color for the agent (auto-assigned if None)
         model: Model to use
         subagents: List of Agent instances this agent can delegate to
         context_schema: Custom context schema
         checkpointer: Optional checkpointer for persistence
+        store: Optional store for persistent long-term memory
+        use_longterm_memory: Whether to enable long-term memory (requires store)
         tool_configs: Tool interrupt configurations
         handle_tool_errors: If True, tool errors become messages instead of exceptions
 
@@ -191,6 +213,8 @@ def async_create_deep_agent(
         subagents=subagents,
         context_schema=context_schema,
         checkpointer=checkpointer,
+        store=store,
+        use_longterm_memory=use_longterm_memory,
         tool_configs=tool_configs,
         is_async=True,
         handle_tool_errors=handle_tool_errors,

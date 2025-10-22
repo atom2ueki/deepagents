@@ -68,6 +68,7 @@ class SubAgentMiddleware(AgentMiddleware):
         subagents: list["Agent"] = [],
         model=None,
         is_async=False,
+        use_longterm_memory: bool = False,
     ) -> None:
         super().__init__()
         task_tool = create_task_tool(
@@ -75,6 +76,7 @@ class SubAgentMiddleware(AgentMiddleware):
             subagents=subagents,
             model=model,
             is_async=is_async,
+            use_longterm_memory=use_longterm_memory,
         )
         self.tools = [task_tool]
 
@@ -87,7 +89,8 @@ class SubAgentMiddleware(AgentMiddleware):
 def _get_agents(
     default_subagent_tools: list[BaseTool],
     subagents: list["Agent"],
-    model
+    model,
+    use_longterm_memory: bool = False,
 ):
     """Build agents dict mapping name -> Agent object.
 
@@ -97,7 +100,7 @@ def _get_agents(
     general_purpose_middleware = [
         ObserverMiddleware(),  # Agent name from runtime.context.agent_name
         TodoListMiddleware(),
-        FilesystemMiddleware(),
+        FilesystemMiddleware(long_term_memory=use_longterm_memory),
         SummarizationMiddleware(
             model=model,
             max_tokens_before_summary=170000,
@@ -145,10 +148,11 @@ def create_task_tool(
     subagents: list["Agent"],
     model,
     is_async: bool = False,
+    use_longterm_memory: bool = False,
 ):
     """Create the task tool for spawning subagents."""
     agents = _get_agents(
-        default_subagent_tools, subagents, model
+        default_subagent_tools, subagents, model, use_longterm_memory
     )
     other_agents_string = _get_subagent_description(subagents)
 
