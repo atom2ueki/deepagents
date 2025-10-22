@@ -31,3 +31,8 @@ packages = ["deepagents", "tests"]
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
+
+[dependency-groups]
+dev = [
+    "python-dotenv>=1.1.1",
+]
