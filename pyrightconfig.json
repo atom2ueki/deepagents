@@ -1,0 +1,11 @@
+{
+  "include": ["src"],
+  "typeCheckingMode": "basic",
+  "reportOptionalMemberAccess": "warning",
+  "reportOptionalOperand": "warning",
+  "reportAttributeAccessIssue": "warning",
+  "reportIncompatibleMethodOverride": "warning",
+  "reportArgumentType": "warning",
+  "reportPossiblyUnboundVariable": "warning",
+  "reportCallIssue": "warning"
+}

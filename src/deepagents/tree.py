@@ -75,13 +75,13 @@ class AgentTree:
             # First agent - becomes root
             self._root = node
             self._current = node
-        else:
+        elif self._current is not None:
             # Child of current agent
             node.parent = self._current
             self._current.children.append(node)
             self._current = node  # Move pointer to new child
 
-        return self._current.level
+        return node.level
 
     def exit_agent(self) -> Optional[int]:
         """Exit current agent context.

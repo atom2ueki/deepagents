@@ -1,12 +1,13 @@
 """Observer middleware for emitting agent events."""
 
+from typing import Any
 from deepagents.events import get_event_bus
 from deepagents.context import AgentContext
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langgraph.runtime import Runtime
 
 
-class ObserverMiddleware(AgentMiddleware):
+class ObserverMiddleware(AgentMiddleware[AgentState, AgentContext]):
     """Middleware that emits all agent events to the event bus.
 
     Emits events for:
@@ -22,7 +23,9 @@ class ObserverMiddleware(AgentMiddleware):
         self._last_message_count = 0
         self._last_todos = None
 
-    def after_model(self, state: AgentState, runtime: Runtime[AgentContext]) -> dict | None:
+    def after_model(
+        self, state: AgentState, runtime: Runtime[AgentContext]
+    ) -> dict | None:
         """Emit events after each model interaction."""
         event_bus = get_event_bus()
 
@@ -43,19 +46,40 @@ class ObserverMiddleware(AgentMiddleware):
             current_count = len(state["messages"])
             if current_count > self._last_message_count:
                 # Emit only new messages
-                for message in state["messages"][self._last_message_count:]:
-                    event_bus.emit("message", agent_name, agent_fg_color, agent_bg_color, agent_level, message)
+                for message in state["messages"][self._last_message_count :]:
+                    event_bus.emit(
+                        "message",
+                        agent_name,
+                        agent_fg_color,
+                        agent_bg_color,
+                        agent_level,
+                        message,
+                    )
                 self._last_message_count = current_count
 
         # Emit todo updates (only if changed)
         if "todos" in state:
             current_todos = state["todos"]
             if current_todos != self._last_todos:
-                event_bus.emit("todos", agent_name, agent_fg_color, agent_bg_color, agent_level, current_todos)
+                event_bus.emit(
+                    "todos",
+                    agent_name,
+                    agent_fg_color,
+                    agent_bg_color,
+                    agent_level,
+                    current_todos,
+                )
                 self._last_todos = current_todos
 
         # Emit file updates (if needed)
         if "files" in state:
-            event_bus.emit("files", agent_name, agent_fg_color, agent_bg_color, agent_level, state["files"])
+            event_bus.emit(
+                "files",
+                agent_name,
+                agent_fg_color,
+                agent_bg_color,
+                agent_level,
+                state["files"],
+            )
 
         return None

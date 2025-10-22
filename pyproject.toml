@@ -34,5 +34,6 @@ packages = ["deepagents", "tests"]
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.406",
     "python-dotenv>=1.1.1",
 ]

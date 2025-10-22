@@ -202,6 +202,56 @@ main_agent = create_deep_agent(
 )
 ```
 
+### Tool Inheritance (Explicit Design)
+
+**Important:** In this OOP fork, subagents do NOT automatically inherit parent tools. This is by design - "explicit is better than implicit".
+
+If you want a subagent to have access to parent tools, **explicitly pass them**:
+
+```python
+from deepagents import create_deep_agent
+
+# Define tools once
+parent_tools = [search_tool, calculator_tool, file_tool]
+
+# Subagent explicitly gets same tools if needed
+research_agent = create_deep_agent(
+    name="researcher",
+    description="Conducts research",
+    instructions="You are a researcher...",
+    tools=parent_tools,  # ✅ Explicit inheritance
+    fg_color="#4A90E2",
+    bg_color="#E3F2FD",
+)
+
+# Main agent uses same tools
+main_agent = create_deep_agent(
+    name="orchestrator",
+    tools=parent_tools,
+    subagents=[research_agent],
+)
+```
+
+**Why explicit tool passing?**
+- ✅ **Clear and Pythonic**: No hidden dependencies
+- ✅ **Isolated by default**: Subagents only get tools you give them
+- ✅ **Type-safe**: Each agent's capabilities are obvious
+- ✅ **Prevents accidents**: No unintended tool access
+
+**Alternative: Use the "general-purpose" subagent**
+
+If you don't specify subagents, a "general-purpose" subagent is automatically created with access to all parent tools. Use it for tasks requiring full tool access:
+
+```python
+agent = create_deep_agent(tools=[tool1, tool2])
+
+# The agent automatically has a "general-purpose" subagent
+# that inherits all parent tools
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Use general-purpose agent to..."}]
+})
+```
+
 ## Event System
 
 ```python

@@ -813,6 +813,11 @@ def _edit_file_tool_generator(custom_description: str | None = None, *, long_ter
             file_path = _validate_path(file_path)
             is_longterm_memory = _has_memories_prefix(file_path)
 
+            # Initialize variables for long-term memory path
+            store = None
+            namespace = None
+            stripped_file_path = None
+
             # Retrieve file data from appropriate storage
             if is_longterm_memory:
                 stripped_file_path = _strip_memories_prefix(file_path)
@@ -837,7 +842,7 @@ def _edit_file_tool_generator(custom_description: str | None = None, *, long_ter
             full_msg = f"{result_msg} in '{file_path}'"
 
             # Save to appropriate storage
-            if is_longterm_memory:
+            if is_longterm_memory and store is not None and namespace is not None and stripped_file_path is not None:
                 store.put(namespace, stripped_file_path, _convert_file_data_to_store_item(new_file_data))
                 return full_msg
 

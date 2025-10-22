@@ -12,6 +12,7 @@ load_dotenv()
 # It's best practice to initialize the client once and reuse it.
 tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
+
 # Search tool to use to do research
 def internet_search(
     query: str,
@@ -38,7 +39,7 @@ only your FINAL answer will be passed on to the user. They will have NO knowledg
 research_sub_agent = create_deep_agent(
     name="research-agent",
     description="Used to research more in depth questions. Only give this researcher one topic at a time. Do not pass multiple sub questions to this researcher. Instead, you should break down a large topic into the necessary components, and then call multiple research agents in parallel, one for each sub question.",
-    instructions=sub_research_prompt,
+    system_prompt=sub_research_prompt,
     tools=[internet_search],
     fg_color="#4A90E2",
     bg_color="#E3F2FD",
@@ -69,7 +70,7 @@ Things to check:
 critique_sub_agent = create_deep_agent(
     name="critique-agent",
     description="Used to critique the final report. Give this agent some information about how you want it to critique the report.",
-    instructions=sub_critique_prompt,
+    system_prompt=sub_critique_prompt,
     tools=[internet_search],
     fg_color="#E91E63",
     bg_color="#FCE4EC",
@@ -136,7 +137,7 @@ Make sure that your sections are cohesive, and make sense for the reader.
 For each section of the report, do the following:
 - Use simple, clear language
 - Use ## for section title (Markdown format) for each section of the report
-- Do NOT ever refer to yourself as the writer of the report. This should be a professional report without any self-referential language. 
+- Do NOT ever refer to yourself as the writer of the report. This should be a professional report without any self-referential language.
 - Do not say what you are doing in the report. Just write the report without any commentary from yourself.
 - Each section should be as long as necessary to deeply answer the question with the information you have gathered. It is expected that sections will be fairly long and verbose. You are writing a deep research report, and users will expect a thorough answer.
 - Use bullet points to list out information when appropriate, but by default, write in paragraph form.
@@ -171,7 +172,7 @@ agent = create_deep_agent(
     name="research-orchestrator",
     description="Main orchestrator for research tasks",
     tools=[internet_search],
-    instructions=research_instructions,
+    system_prompt=research_instructions,
     subagents=[critique_sub_agent, research_sub_agent],
     fg_color="#2E7D32",
     bg_color="#E8F5E9",

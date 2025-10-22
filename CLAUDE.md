@@ -1,0 +1,1 @@
+- lint with: uv run pyright src/deepagents/

@@ -95,6 +95,7 @@ class ToolAgent(Agent):
         """
         super().__init__(name, description, fg_color, bg_color)
         self._graph = graph
+        self.subagents: list["Agent"] = []  # Store subagents for reference
 
     async def ainvoke(self, state: dict, config: Optional[dict] = None, **kwargs) -> dict:
         """Invoke agent with auto-context injection."""
