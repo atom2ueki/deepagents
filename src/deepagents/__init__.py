@@ -1,5 +1,5 @@
 from deepagents.graph import create_deep_agent, async_create_deep_agent
-from deepagents.middleware import ObserverMiddleware, PlanningMiddleware, FilesystemMiddleware, SubAgentMiddleware
+from deepagents.middleware import ObserverMiddleware, FilesystemMiddleware, SubAgentMiddleware
 from deepagents.state import DeepAgentState
 from deepagents.context import AgentContext
 from deepagents.agent import Agent, ToolAgent, CustomAgent

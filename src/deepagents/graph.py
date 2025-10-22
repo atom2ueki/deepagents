@@ -3,13 +3,13 @@ from langchain_core.tools import BaseTool
 from langchain_core.language_models import LanguageModelLike
 from langgraph.types import Checkpointer
 from langchain.agents import create_agent as langchain_create_agent
-from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware, HumanInTheLoopMiddleware
-from langchain.agents.middleware.human_in_the_loop import ToolConfig
-from langchain.agents.middleware.prompt_caching import AnthropicPromptCachingMiddleware
-from deepagents.middleware import ObserverMiddleware, PlanningMiddleware, FilesystemMiddleware, SubAgentMiddleware
+from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware, HumanInTheLoopMiddleware, InterruptOnConfig, TodoListMiddleware
+from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+from deepagents.middleware import ObserverMiddleware, FilesystemMiddleware, SubAgentMiddleware, PatchToolCallsMiddleware
 from deepagents.context import AgentContext
-from deepagents.prompts import BASE_AGENT_PROMPT
 from deepagents.model import get_default_model
+
+BASE_AGENT_PROMPT = "In order to complete the objective that the user asks of you, you have access to a number of standard tools."
 
 if TYPE_CHECKING:
     from deepagents.agent import Agent
@@ -24,7 +24,7 @@ def agent_builder(
     fg_color: str,
     bg_color: str,
     middleware: Optional[list[AgentMiddleware]] = None,
-    tool_configs: Optional[dict[str, bool | ToolConfig]] = None,
+    tool_configs: Optional[dict[str, bool | InterruptOnConfig]] = None,
     model: Optional[Union[str, LanguageModelLike]] = None,
     subagents: Optional[list["Agent"]] = None,
     context_schema: Optional[Type[Any]] = None,
@@ -37,7 +37,7 @@ def agent_builder(
 
     deepagent_middleware = [
         ObserverMiddleware(),  # Agent name from runtime.context.agent_name
-        PlanningMiddleware(),
+        TodoListMiddleware(),
         FilesystemMiddleware(),
         SubAgentMiddleware(
             default_subagent_tools=tools,   # NOTE: These tools are piped to the general-purpose subagent.
@@ -47,10 +47,11 @@ def agent_builder(
         ),
         SummarizationMiddleware(
             model=model,
-            max_tokens_before_summary=120000,
-            messages_to_keep=20,
+            max_tokens_before_summary=170000,
+            messages_to_keep=6,
         ),
-        AnthropicPromptCachingMiddleware(ttl="5m", unsupported_model_behavior="ignore")
+        AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+        PatchToolCallsMiddleware(),
     ]
     # Add tool interrupt config if provided
     if tool_configs is not None:
@@ -73,7 +74,7 @@ def agent_builder(
 
     graph = langchain_create_agent(
         model,
-        system_prompt=instructions + "\n\n" + BASE_AGENT_PROMPT,
+        system_prompt=instructions + "\n\n" + BASE_AGENT_PROMPT if instructions else BASE_AGENT_PROMPT,
         tools=tools,
         middleware=deepagent_middleware,
         context_schema=context_schema or AgentContext,
@@ -104,7 +105,7 @@ def create_deep_agent(
     subagents: Optional[list["Agent"]] = None,
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
-    tool_configs: Optional[dict[str, bool | ToolConfig]] = None,
+    tool_configs: Optional[dict[str, bool | InterruptOnConfig]] = None,
     handle_tool_errors: bool = True,
 ) -> "ToolAgent":
     """Create a ToolAgent (agent built from tools and instructions).
@@ -155,7 +156,7 @@ def async_create_deep_agent(
     subagents: Optional[list["Agent"]] = None,
     context_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
-    tool_configs: Optional[dict[str, bool | ToolConfig]] = None,
+    tool_configs: Optional[dict[str, bool | InterruptOnConfig]] = None,
     handle_tool_errors: bool = True,
 ) -> "ToolAgent":
     """Create a ToolAgent (async version).

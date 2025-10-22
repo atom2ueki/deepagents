@@ -1,20 +1,15 @@
-"""DeepAgents implemented as Middleware"""
+"""Subagent middleware for spawning task-specific subagents."""
 
-from deepagents.events import get_event_bus
-from deepagents.context import AgentContext
+from typing import Annotated, TYPE_CHECKING
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware, AgentState, ModelRequest, SummarizationMiddleware
-from langchain.agents.middleware.prompt_caching import AnthropicPromptCachingMiddleware
+from langchain.agents.middleware import AgentMiddleware, AgentState, ModelRequest, SummarizationMiddleware, TodoListMiddleware
+from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langchain_core.tools import BaseTool, tool, InjectedToolCallId
 from langchain_core.messages import ToolMessage
-from langchain.chat_models import init_chat_model
 from langgraph.types import Command
-from langgraph.runtime import Runtime
 from langchain.tools.tool_node import InjectedState
-from typing import Annotated, TYPE_CHECKING
-from deepagents.state import PlanningState, FilesystemState
-from deepagents.tools import write_todos, ls, read_file, write_file, edit_file
-from deepagents.prompts import WRITE_TODOS_SYSTEM_PROMPT, TASK_SYSTEM_PROMPT, FILESYSTEM_SYSTEM_PROMPT, TASK_TOOL_DESCRIPTION, BASE_AGENT_PROMPT
+
+from deepagents.context import AgentContext
 
 if TYPE_CHECKING:
     from deepagents.agent import Agent
@@ -22,94 +17,51 @@ else:
     # Import at runtime for _get_agents (no circular dependency)
     from deepagents.agent import ToolAgent
 
-###########################
-# Observer Middleware
-###########################
+# Import other middleware
+from deepagents.middleware.observer import ObserverMiddleware
+from deepagents.middleware.filesystem import FilesystemMiddleware
+from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
-class ObserverMiddleware(AgentMiddleware):
-    """Middleware that emits all agent events to the event bus.
+BASE_AGENT_PROMPT = "In order to complete the objective that the user asks of you, you have access to a number of standard tools."
 
-    Emits events for:
-    - Messages (AI thinking, tool calls, tool responses)
-    - Todos updates
-    - Files updates (future)
+TASK_SYSTEM_PROMPT = """## `task` (subagent spawner)
 
-    Agent name is determined from runtime.context.agent_name (no hardcoding).
-    """
+You have access to a `task` tool to launch short-lived subagents that handle isolated tasks. These agents are ephemeral — they live only for the duration of the task and return a single result.
 
-    def __init__(self):
-        super().__init__()
-        self._last_message_count = 0
-        self._last_todos = None
+When to use the task tool:
+- When a task is complex and multi-step, and can be fully delegated in isolation
+- When a task is independent of other tasks and can run in parallel
+- When a task requires focused reasoning or heavy token/context usage that would bloat the orchestrator thread
+- When sandboxing improves reliability (e.g. code execution, structured searches, data formatting)
+- When you only care about the output of the subagent, and not the intermediate steps (ex. performing a lot of research and then returned a synthesized report, performing a series of computations or lookups to achieve a concise, relevant answer.)
 
-    def after_model(self, state: AgentState, runtime: Runtime[AgentContext]) -> dict | None:
-        """Emit events after each model interaction."""
-        event_bus = get_event_bus()
+Subagent lifecycle:
+1. **Spawn** → Provide clear role, instructions, and expected output
+2. **Run** → The subagent completes the task autonomously
+3. **Return** → The subagent provides a single structured result
+4. **Reconcile** → Incorporate or synthesize the result into the main thread
 
-        # Get agent info from runtime context (dynamic, not hardcoded)
-        if runtime.context:
-            agent_name = runtime.context.agent_name
-            agent_fg_color = runtime.context.agent_fg_color
-            agent_bg_color = runtime.context.agent_bg_color
-            agent_level = runtime.context.agent_level
-        else:
-            agent_name = "unknown"
-            agent_fg_color = "#000000"
-            agent_bg_color = "#ffffff"
-            agent_level = 0
+When NOT to use the task tool:
+- If you need to see the intermediate reasoning or steps after the subagent has completed (the task tool hides them)
+- If the task is trivial (a few tool calls or simple lookup)
+- If delegating does not reduce token usage, complexity, or context switching
+- If splitting would add latency without benefit
 
-        # Emit NEW messages only (to maintain sequence)
-        if "messages" in state and state["messages"]:
-            current_count = len(state["messages"])
-            if current_count > self._last_message_count:
-                # Emit only new messages
-                for message in state["messages"][self._last_message_count:]:
-                    event_bus.emit("message", agent_name, agent_fg_color, agent_bg_color, agent_level, message)
-                self._last_message_count = current_count
+## Important Task Tool Usage Notes to Remember
+- Whenever possible, parallelize the work that you do. This is true for both tool_calls, and for tasks. Whenever you have independent steps to complete - make tool_calls, or kick off tasks (subagents) in parallel to accomplish them faster. This saves time for the user, which is incredibly important.
+- Remember to use the `task` tool to silo independent tasks within a multi-part objective.
+- You should use the `task` tool whenever you have a complex task that will take multiple steps, and is independent from other tasks that the agent needs to complete. These agents are highly competent and efficient."""
 
-        # Emit todo updates (only if changed)
-        if "todos" in state:
-            current_todos = state["todos"]
-            if current_todos != self._last_todos:
-                event_bus.emit("todos", agent_name, agent_fg_color, agent_bg_color, agent_level, current_todos)
-                self._last_todos = current_todos
+TASK_TOOL_DESCRIPTION = """Launch an ephemeral subagent to handle complex, multi-step independent tasks with isolated context windows.
 
-        # Emit file updates (if needed)
-        if "files" in state:
-            event_bus.emit("files", agent_name, agent_fg_color, agent_bg_color, agent_level, state["files"])
+Available agent types and the tools they have access to:
+- general-purpose: General-purpose agent for researching complex questions, searching for files and content, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. This agent has access to all tools as the main agent.
+{other_agents}"""
 
-        return None
-
-
-###########################
-# Planning Middleware
-###########################
-
-class PlanningMiddleware(AgentMiddleware):
-    state_schema = PlanningState
-    tools = [write_todos]
-
-    def modify_model_request(self, request: ModelRequest, agent_state: PlanningState, runtime: Runtime) -> ModelRequest:
-        request.system_prompt = request.system_prompt + "\n\n" + WRITE_TODOS_SYSTEM_PROMPT
-        return request
-
-###########################
-# Filesystem Middleware
-###########################
-
-class FilesystemMiddleware(AgentMiddleware):
-    state_schema = FilesystemState
-    tools = [ls, read_file, write_file, edit_file]
-
-    def modify_model_request(self, request: ModelRequest, agent_state: FilesystemState, runtime: Runtime) -> ModelRequest:
-        request.system_prompt = request.system_prompt + "\n\n" + FILESYSTEM_SYSTEM_PROMPT
-        return request
-
-###########################
-# SubAgent Middleware
-###########################
 
 class SubAgentMiddleware(AgentMiddleware):
+    """Middleware that provides subagent spawning capabilities."""
+
     def __init__(
         self,
         default_subagent_tools: list[BaseTool] = [],
@@ -126,9 +78,11 @@ class SubAgentMiddleware(AgentMiddleware):
         )
         self.tools = [task_tool]
 
-    def modify_model_request(self, request: ModelRequest, agent_state: AgentState, runtime: Runtime) -> ModelRequest:
+    def modify_model_request(self, request: ModelRequest, agent_state: AgentState) -> ModelRequest:
+        """Add subagent system prompt to the model request."""
         request.system_prompt = request.system_prompt + "\n\n" + TASK_SYSTEM_PROMPT
         return request
+
 
 def _get_agents(
     default_subagent_tools: list[BaseTool],
@@ -142,20 +96,21 @@ def _get_agents(
     # General purpose subagent middleware
     general_purpose_middleware = [
         ObserverMiddleware(),  # Agent name from runtime.context.agent_name
-        PlanningMiddleware(),
+        TodoListMiddleware(),
         FilesystemMiddleware(),
         SummarizationMiddleware(
             model=model,
-            max_tokens_before_summary=120000,
-            messages_to_keep=20,
+            max_tokens_before_summary=170000,
+            messages_to_keep=6,
         ),
-        AnthropicPromptCachingMiddleware(ttl="5m", unsupported_model_behavior="ignore"),
+        AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+        PatchToolCallsMiddleware(),
     ]
 
     # Create general-purpose agent graph
     general_purpose_graph = create_agent(
         model,
-        prompt=BASE_AGENT_PROMPT,
+        system_prompt=BASE_AGENT_PROMPT,
         tools=default_subagent_tools,
         checkpointer=False,
         context_schema=AgentContext,
@@ -191,6 +146,7 @@ def create_task_tool(
     model,
     is_async: bool = False,
 ):
+    """Create the task tool for spawning subagents."""
     agents = _get_agents(
         default_subagent_tools, subagents, model
     )

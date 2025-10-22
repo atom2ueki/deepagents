@@ -9,7 +9,7 @@ from langchain_core.tools import BaseTool
 from langchain_core.language_models import LanguageModelLike
 from langgraph.types import Checkpointer
 from langchain.agents.middleware import AgentMiddleware
-from langchain.agents.middleware.human_in_the_loop import ToolConfig
+from langchain.agents.middleware import InterruptOnConfig
 
 from deepagents.context import AgentContext
 from deepagents.tree import get_agent_tree

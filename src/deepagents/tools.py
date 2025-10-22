@@ -3,37 +3,16 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from langchain.tools.tool_node import InjectedState
 from typing import Annotated, Union
-from deepagents.state import Todo, FilesystemState
-from deepagents.prompts import (
-    WRITE_TODOS_TOOL_DESCRIPTION,
-    LIST_FILES_TOOL_DESCRIPTION,
-    READ_FILE_TOOL_DESCRIPTION,
-    WRITE_FILE_TOOL_DESCRIPTION,
-    EDIT_FILE_TOOL_DESCRIPTION,
-)
+from deepagents.state import FilesystemState
 
 
-@tool(description=WRITE_TODOS_TOOL_DESCRIPTION)
-def write_todos(
-    todos: list[Todo], tool_call_id: Annotated[str, InjectedToolCallId]
-) -> Command:
-    return Command(
-        update={
-            "todos": todos,
-            "messages": [
-                ToolMessage(f"Updated todo list to {todos}", tool_call_id=tool_call_id)
-            ],
-        }
-    )
-
-
-@tool(description=LIST_FILES_TOOL_DESCRIPTION)
+@tool(description="Lists all files in the local filesystem.")
 def ls(state: Annotated[FilesystemState, InjectedState]) -> list[str]:
     """List all files"""
     return list(state.get("files", {}).keys())
 
 
-@tool(description=READ_FILE_TOOL_DESCRIPTION)
+@tool(description="Reads a file from the local filesystem. You can access any file directly by using this tool.")
 def read_file(
     file_path: str,
     state: Annotated[FilesystemState, InjectedState],
@@ -78,7 +57,7 @@ def read_file(
     return "\n".join(result_lines)
 
 
-@tool(description=WRITE_FILE_TOOL_DESCRIPTION)
+@tool(description="Writes to a file in the local filesystem.")
 def write_file(
     file_path: str,
     content: str,
@@ -97,7 +76,7 @@ def write_file(
     )
 
 
-@tool(description=EDIT_FILE_TOOL_DESCRIPTION)
+@tool(description="Performs exact string replacements in files.")
 def edit_file(
     file_path: str,
     old_string: str,
