@@ -153,6 +153,19 @@ class ToolAgent(Agent):
         )
         return new_agent
 
+    @property
+    def graph(self):
+        """Access the underlying LangGraph CompiledStateGraph."""
+        return self._graph
+
+    def __getattr__(self, name):
+        """Delegate attribute access to underlying graph for compatibility.
+
+        This allows ToolAgent to be used transparently where CompiledStateGraph
+        is expected (e.g., accessing .nodes, .stream_channels, etc.).
+        """
+        return getattr(self._graph, name)
+
 
 class CustomAgent(Agent):
     """Agent with pre-built custom graph.
