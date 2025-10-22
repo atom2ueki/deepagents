@@ -1,8 +1,10 @@
-# 🧠🤖Deep Agents
+# 🧠🤖Deep Agents (OOP Fork)
 
-Using an LLM to call tools in a loop is the simplest form of an agent. 
-This architecture, however, can yield agents that are “shallow” and fail to plan and act over longer, more complex tasks. 
-Applications like “Deep Research”, "Manus", and “Claude Code” have gotten around this limitation by implementing a combination of four things:
+> **Note**: This is a modified fork of [langchain-ai/deepagents](https://github.com/langchain-ai/deepagents) that adds an **object-oriented agent abstraction layer** with event emission for UI integration.
+
+Using an LLM to call tools in a loop is the simplest form of an agent.
+This architecture, however, can yield agents that are "shallow" and fail to plan and act over longer, more complex tasks.
+Applications like "Deep Research", "Manus", and "Claude Code" have gotten around this limitation by implementing a combination of four things:
 a **planning tool**, **sub agents**, access to a **file system**, and a **detailed prompt**.
 
 <img src="deep_agents.png" alt="deep agent" width="600"/>
@@ -11,15 +13,54 @@ a **planning tool**, **sub agents**, access to a **file system**, and a **detail
 
 **Acknowledgements: This project was primarily inspired by Claude Code, and initially was largely an attempt to see what made Claude Code general purpose, and make it even more so.**
 
+## Key Features
+
+This version includes:
+
+### 🎯 **OOP Agent Abstraction**
+- **Agent hierarchy**: `Agent` (base) → `ToolAgent` / `CustomAgent` (implementations)
+- Agents are **objects** instead of raw LangGraph graphs
+- Consistent interface: `agent.invoke()`, `agent.ainvoke()`, `agent.stream()`
+- Built-in metadata: `name`, `description`, `fg_color`, `bg_color`
+
+### 📡 **Event System**
+- Real-time event emission via `ObserverMiddleware`
+- Event bus for UI integration: `get_event_bus()`
+- Events include: messages, todos, agent hierarchy (tree levels)
+- Perfect for building interactive UIs on top of deep agents
+
+### 🎨 **Visual Agent Tracking**
+- Each agent has customizable colors (`fg_color`, `bg_color`)
+- Automatic tree level tracking for nested subagents
+- `AgentContext` passed through execution for debugging
+
+### 🔧 **Simple, Expressive API**
+```python
+agent = create_deep_agent(
+    tools=[tool1, tool2],
+    instructions="Your system prompt here...",
+    name="my-agent",
+    description="What this agent does",
+    subagents=[other_agent1, other_agent2],  # OOP agent objects
+    fg_color="#4A90E2",
+    bg_color="#E3F2FD",
+)
+# Returns: ToolAgent (wraps CompiledStateGraph with rich metadata)
+```
+
 ## Installation
 
 ```bash
-pip install deepagents
+# From GitHub (this fork)
+pip install git+https://github.com/atom2ueki/deepagents.git
+
+# For development
+git clone https://github.com/atom2ueki/deepagents.git
+cd deepagents
+uv sync
 ```
 
-## Usage
-
-(To run the example below, will need to `pip install tavily-python`)
+## Quick Start
 
 ```python
 import os
@@ -29,406 +70,213 @@ from deepagents import create_deep_agent
 
 tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
-# Search tool to use to do research
+# Web search tool
 def internet_search(
     query: str,
     max_results: int = 5,
     topic: Literal["general", "news", "finance"] = "general",
-    include_raw_content: bool = False,
 ):
     """Run a web search"""
-    return tavily_client.search(
-        query,
-        max_results=max_results,
-        include_raw_content=include_raw_content,
-        topic=topic,
-    )
+    return tavily_client.search(query, max_results=max_results, topic=topic)
 
-
-# Prompt prefix to steer the agent to be an expert researcher
-research_instructions = """You are an expert researcher. Your job is to conduct thorough research, and then write a polished report.
-
-You have access to a few tools.
-
-## `internet_search`
-
-Use this to run an internet search for a given query. You can specify the number of results, the topic, and whether raw content should be included.
-"""
-
-# Create the agent
+# Create the deep agent (returns ToolAgent object)
 agent = create_deep_agent(
-    [internet_search],
-    research_instructions,
+    name="researcher",
+    description="Expert research agent",
+    tools=[internet_search],
+    instructions="""You are an expert researcher.
+    Conduct thorough research and write polished reports.""",
+    fg_color="#2E7D32",
+    bg_color="#E8F5E9",
 )
 
 # Invoke the agent
-result = agent.invoke({"messages": [{"role": "user", "content": "what is langgraph?"}]})
+result = agent.invoke({"messages": [{"role": "user", "content": "What is langgraph?"}]})
 ```
 
-See [examples/research/research_agent.py](examples/research/research_agent.py) for a more complex example.
+See [examples/research/research_agent.py](examples/research/research_agent.py) for a more complex example with subagents.
 
-The agent created with `create_deep_agent` is just a LangGraph graph - so you can interact with it (streaming, human-in-the-loop, memory, studio)
-in the same way you would any LangGraph agent.
+## Core Capabilities
 
-## Creating a custom deep agent
+### 📋 **Planning & Task Decomposition**
+Built-in `write_todos` tool enables agents to break down complex tasks, track progress, and adapt plans.
 
-There are several parameters you can pass to `create_deep_agent` to create your own custom deep agent.
+### 💾 **Context Management**
+File system tools (`ls`, `read_file`, `write_file`, `edit_file`) allow agents to offload context to memory.
 
-### `tools` (Required)
+### 🔄 **Subagent Spawning**
+Built-in `task` tool enables spawning specialized subagents for context isolation.
 
-The first argument to `create_deep_agent` is `tools`.
-This should be a list of functions or LangChain `@tool` objects.
-The agent (and any subagents) will have access to these tools.
-
-### `instructions` (Required)
-
-The second argument to `create_deep_agent` is `instructions`.
-This will serve as part of the prompt of the deep agent.
-Note that our deep agent middleware appends further instructions to the deep agent regarding to-do list, filesystem, and subagent usage, so this is not the *entire* prompt the agent will see.
-
-### `subagents` (Optional)
-
-A keyword-only argument to `create_deep_agent` is `subagents`.
-This can be used to specify any custom subagents this deep agent will have access to.
-You can read more about why you would want to use subagents [here](#sub-agents)
-
-`subagents` should be a list of dictionaries, where each dictionary follow this schema:
+### 💿 **Long-term Memory**
+Persistent memory across conversations using LangGraph's Store:
 
 ```python
-class SubAgent(TypedDict):
-    name: str
-    description: str
-    prompt: str
-    tools: NotRequired[list[str]]
-    model: NotRequired[Union[LanguageModelLike, dict[str, Any]]]
-    middleware: NotRequired[list[AgentMiddleware]]
+from langgraph.store.memory import InMemoryStore
+from deepagents import create_deep_agent
 
-class CustomSubAgent(TypedDict):
-    name: str
-    description: str
-    graph: Runnable
-```
-
-**SubAgent fields:**
-- **name**: This is the name of the subagent, and how the main agent will call the subagent
-- **description**: This is the description of the subagent that is shown to the main agent
-- **prompt**: This is the prompt used for the subagent
-- **tools**: This is the list of tools that the subagent has access to. By default will have access to all tools passed in, as well as all built-in tools.
-- **model**: Optional model instance OR dictionary for per-subagent model configuration (inherits the main model when omitted).
-- **middleware** Additional middleware to attach to the subagent. See [here](https://docs.langchain.com/oss/python/langchain/middleware) for an introduction into middleware and how it works with create_agent.
-
-**CustomSubAgent fields:**
-- **name**: This is the name of the subagent, and how the main agent will call the subagent
-- **description**: This is the description of the subagent that is shown to the main agent  
-- **graph**: A pre-built LangGraph graph/agent that will be used as the subagent
-
-#### Using SubAgent
-
-```python
-research_subagent = {
-    "name": "research-agent",
-    "description": "Used to research more in depth questions",
-    "prompt": sub_research_prompt,
-    "tools": [internet_search]
-}
-subagents = [research_subagent]
+store = InMemoryStore()
 agent = create_deep_agent(
-    tools,
-    prompt,
-    subagents=subagents
+    tools=[...],
+    instructions="...",
+    store=store,
+    use_longterm_memory=True  # Enable persistent storage
 )
+
+# Files prefixed with /memories/ persist across threads
+agent.invoke({"messages": [{
+    "role": "user",
+    "content": "Save important data to /memories/notes.txt"
+}]})
 ```
 
-#### Using CustomSubAgent
+## API Reference
 
-For more complex use cases, you can provide your own pre-built LangGraph graph as a subagent:
+### `create_deep_agent()`
 
 ```python
-from langchain.agents import create_agent
-
-# Create a custom agent graph
-custom_graph = create_agent(
-    model=your_model,
-    tools=specialized_tools,
-    prompt="You are a specialized agent for data analysis..."
-)
-
-# Use it as a custom subagent
-custom_subagent = {
-    "name": "data-analyzer",
-    "description": "Specialized agent for complex data analysis tasks",
-    "graph": custom_graph
-}
-
-subagents = [custom_subagent]
-agent = create_deep_agent(
-    tools,
-    prompt,
-    subagents=subagents
-)
+def create_deep_agent(
+    tools: Sequence[BaseTool | Callable] = [],
+    instructions: str = "",
+    name: str = "main",
+    description: str = "",
+    fg_color: str = "#000000",
+    bg_color: str = "#ffffff",
+    middleware: Optional[list[AgentMiddleware]] = None,
+    model: Optional[LanguageModelLike] = None,
+    subagents: Optional[list[Agent]] = None,
+    context_schema: Optional[Type[Any]] = None,
+    checkpointer: Optional[Checkpointer] = None,
+    store: Optional[BaseStore] = None,
+    use_longterm_memory: bool = False,
+    tool_configs: Optional[dict[str, bool | InterruptOnConfig]] = None,
+    handle_tool_errors: bool = True,
+) -> ToolAgent
 ```
 
-### `model` (Optional)
+**Parameters:**
+- `tools`: List of tools available to the agent
+- `instructions`: System prompt for the agent
+- `name`: Agent name (for event emissions and debugging)
+- `description`: What this agent does (used by parent agents)
+- `fg_color`, `bg_color`: Visual identification colors
+- `model`: LangChain model (defaults to Claude Sonnet 4.5)
+- `subagents`: List of ToolAgent objects this agent can delegate to
+- `store`: BaseStore for long-term memory persistence
+- `use_longterm_memory`: Enable `/memories/` path for persistent storage
 
-By default, `deepagents` uses `"claude-sonnet-4-20250514"`. You can customize this by passing any [LangChain model object](https://python.langchain.com/docs/integrations/chat/).
+**Returns:** `ToolAgent` instance with auto-context injection
 
-#### Example: Using a Custom Model
-
-Here's how to use a custom model (like OpenAI's `gpt-oss` model via Ollama):
-
-(Requires `pip install langchain` and then `pip install langchain-ollama` for Ollama models)
+### Creating Subagents
 
 ```python
 from deepagents import create_deep_agent
 
-# ... existing agent definitions ...
-
-model = init_chat_model(
-    model="ollama:gpt-oss:20b",  
+# Create specialized subagents
+research_agent = create_deep_agent(
+    name="researcher",
+    description="Conducts deep research on topics",
+    instructions="You are a thorough researcher...",
+    tools=[search_tool],
+    fg_color="#4A90E2",
+    bg_color="#E3F2FD",
 )
-agent = create_deep_agent(
-    tools=tools,
-    instructions=instructions,
-    model=model,
-    ...
+
+critic_agent = create_deep_agent(
+    name="critic",
+    description="Critiques and improves content",
+    instructions="You are a critical editor...",
+    tools=[],
+    fg_color="#E91E63",
+    bg_color="#FCE4EC",
+)
+
+# Main orchestrator delegates to subagents
+main_agent = create_deep_agent(
+    name="orchestrator",
+    description="Main coordination agent",
+    tools=[...],
+    instructions="Coordinate research and critique...",
+    subagents=[research_agent, critic_agent],  # OOP objects!
+    fg_color="#2E7D32",
+    bg_color="#E8F5E9",
 )
 ```
 
-#### Example: Per-subagent model override (optional)
-
-Use a fast, deterministic model for a critique sub-agent, while keeping a different default model for the main agent and others:
+## Event System
 
 ```python
-from deepagents import create_deep_agent
+from deepagents import get_event_bus
 
-critique_sub_agent = {
-    "name": "critique-agent",
-    "description": "Critique the final report",
-    "prompt": "You are a tough editor.",
-    "model_settings": {
-        "model": "anthropic:claude-3-5-haiku-20241022",
-        "temperature": 0,
-        "max_tokens": 8192
-    }
-}
+# Get the global event bus
+event_bus = get_event_bus()
 
-agent = create_deep_agent(
-    tools=[internet_search],
-    instructions="You are an expert researcher...",
-    model="claude-sonnet-4-20250514",  # default for main agent and other sub-agents
-    subagents=[critique_sub_agent],
-)
+# Register event handlers
+def on_message(agent_name, fg_color, bg_color, level, message):
+    print(f"[{agent_name} L{level}] {message.content}")
+
+def on_todo_update(agent_name, fg_color, bg_color, level, todos):
+    print(f"[{agent_name}] Todos: {todos}")
+
+event_bus.on("message", on_message)
+event_bus.on("todos", on_todo_update)
+
+# Run agent - events fire automatically
+agent.invoke({"messages": [...]})
 ```
 
+**Event Types:**
+- `"message"`: AI messages, tool calls, tool responses
+- `"todos"`: Todo list updates
+- `"files"`: File system changes (future)
 
-### `middleware` (Optional)
-Both the main agent and sub-agents can take additional custom AgentMiddleware. Middleware is the best supported approach for extending the state_schema, adding additional tools, and adding pre / post model hooks. See this [doc](https://docs.langchain.com/oss/python/langchain/middleware) to learn more about Middleware and how you can use it!
+## Agent Hierarchy & Tree Levels
 
-### `tool_configs` (Optional)
-Tool configs are used to specify how to handle Human In The Loop interactions on certain tools that require additional human oversight. 
+```python
+# Agents automatically track their depth in execution tree
+main_agent.invoke(...)
+# main_agent: level 0
+#   ├─ research_agent (via task tool): level 1
+#   │   └─ general-purpose: level 2
+#   └─ critic_agent (via task tool): level 1
+```
 
-These tool_configs are passed to our prebuilt [HITL middleware](https://docs.langchain.com/oss/python/langchain/middleware#human-in-the-loop) so that the agent pauses execution and waits for feedback from the user before executing configured tools.
+The `level` is automatically calculated and passed through `AgentContext`.
 
-## Deep Agent Details
+## Advanced Usage
 
-The below components are built into `deepagents` and helps make it work for deep tasks off-the-shelf.
+### Accessing the Underlying Graph
 
-### System Prompt
-
-`deepagents` comes with a [built-in system prompt](src/deepagents/prompts.py). This is relatively detailed prompt that is heavily based on and inspired by [attempts](https://github.com/kn1026/cc/blob/main/claudecode.md) to [replicate](https://github.com/asgeirtj/system_prompts_leaks/blob/main/Anthropic/claude-code.md)
-Claude Code's system prompt. It was made more general purpose than Claude Code's system prompt.
-This contains detailed instructions for how to use the built-in planning tool, file system tools, and sub agents.
-Note that part of this system prompt [can be customized](#instructions-required)
-
-Without this default system prompt - the agent would not be nearly as successful at going as it is.
-The importance of prompting for creating a "deep" agent cannot be understated.
-
-### Planning Tool
-
-`deepagents` comes with a built-in planning tool. This planning tool is very simple and is based on ClaudeCode's TodoWrite tool.
-This tool doesn't actually do anything - it is just a way for the agent to come up with a plan, and then have that in the context to help keep it on track.
-
-### File System Tools
-
-`deepagents` comes with four built-in file system tools: `ls`, `edit_file`, `read_file`, `write_file`.
-These do not actually use a file system - rather, they mock out a file system using LangGraph's State object.
-This means you can easily run many of these agents on the same machine without worrying that they will edit the same underlying files.
-
-Right now the "file system" will only be one level deep (no sub directories).
-
-These files can be passed in (and also retrieved) by using the `files` key in the LangGraph State object.
+If you need direct access to the LangGraph `CompiledStateGraph`:
 
 ```python
 agent = create_deep_agent(...)
-
-result = agent.invoke({
-    "messages": ...,
-    # Pass in files to the agent using this key
-    # "files": {"foo.txt": "foo", ...}
-})
-
-# Access any files afterwards like this
-result["files"]
+graph = agent.graph  # CompiledStateGraph for advanced LangGraph features
 ```
 
-### Sub Agents
+This gives you full LangGraph capabilities like custom state inspection, checkpointing, and streaming.
 
-`deepagents` comes with the built-in ability to call sub agents (based on Claude Code).
-It has access to a `general-purpose` subagent at all times - this is a subagent with the same instructions as the main agent and all the tools that is has access to.
-You can also specify [custom sub agents](#subagents-optional) with their own instructions and tools.
+## Testing
 
-Sub agents are useful for ["context quarantine"](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html#context-quarantine) (to help not pollute the overall context of the main agent)
-as well as custom instructions.
+```bash
+# Run tests
+pytest tests/
 
-### Built In Tools
+# Run specific test
+pytest tests/test_deepagents.py -v
 
-By default, deep agents come with five built-in tools:
-
-- `write_todos`: Tool for writing todos
-- `write_file`: Tool for writing to a file in the virtual filesystem
-- `read_file`: Tool for reading from a file in the virtual filesystem
-- `ls`: Tool for listing files in the virtual filesystem
-- `edit_file`: Tool for editing a file in the virtual filesystem
-
-If you want to omit some deepagents functionality, use specific middleware components directly!
-
-### Human-in-the-Loop
-
-`deepagents` supports human-in-the-loop approval for tool execution. You can configure specific tools to require human approval before execution using the `tool_configs` parameter, which maps tool names to a `HumanInTheLoopConfig`.
-
-`HumanInTheLoopConfig` is how you specify what type of human in the loop patterns are supported. 
-It is a dictionary with four specific keys:
-
-- `allow_accept`: Whether the human can approve the current action without changes
-- `allow_respond`: Whether the human can reject the current action with feedback
-- `allow_edit`: Whether the human can approve the current action with edited content
-
-Instead of specifying a `HumanInTheLoopConfig` for a tool, you can also just set `True`. This will set `allow_ignore`, `allow_respond`, `allow_edit`, and `allow_accept` to be `True`.
-
-In order to use human in the loop, you need to have a checkpointer attached.
-Note: if you are using LangGraph Platform, this is automatically attached.
-
-Example usage:
-
-```python
-from deepagents import create_deep_agent
-from langgraph.checkpoint.memory import InMemorySaver
-
-# Create agent with file operations requiring approval
-agent = create_deep_agent(
-    tools=[your_tools],
-    instructions="Your instructions here",
-    tool_configs={
-        # You can specify a dictionary for fine grained control over what interrupt options exist
-        "tool_1": {
-            "allow_respond": True,
-            "allow_edit": True,
-            "allow_accept":True,
-        },
-        # You can specify a boolean for shortcut
-        # This is a shortcut for the same functionality as above
-        "tool_2": True,
-    }
-)
-
-checkpointer= InMemorySaver()
-agent.checkpointer = checkpointer
+# Run examples
+cd examples/research
+python test_agent.py
+python test_longterm_memory.py
 ```
 
-#### Approve
+## Contributing
 
-To "approve" a tool call means the agent will execute the tool call as is.
+Contributions are welcome! Please submit PRs to:
+- https://github.com/atom2ueki/deepagents
 
-This flow shows how to approve a tool call (assuming the tool requiring approval is called):
+For issues or feature requests, open an issue on GitHub.
 
-```python
-config = {"configurable": {"thread_id": "1"}}
-for s in agent.stream({"messages": [{"role": "user", "content": message}]}, config=config):
-    print(s)
-# If this calls a tool with an interrupt, this will then return an interrupt
-for s in agent.stream(Command(resume=[{"type": "accept"}]), config=config):
-    print(s)
+## License
 
-```
-
-#### Edit
-
-To "edit" a tool call means the agent will execute the new tool with the new arguments. You can change both the tool to call or the arguments to pass to that tool.
-
-The `args` parameter you pass back should be a dictionary with two keys:
-
-- `action`: maps to a string which is the name of the tool to call
-- `args`: maps to a dictionary which is the arguments to pass to the tool
-
-This flow shows how to edit a tool call (assuming the tool requiring approval is called):
-
-```python
-config = {"configurable": {"thread_id": "1"}}
-for s in agent.stream({"messages": [{"role": "user", "content": message}]}, config=config):
-    print(s)
-# If this calls a tool with an interrupt, this will then return an interrupt
-# Replace the `...` with the tool name you want to call, and the arguments
-for s in agent.stream(Command(resume=[{"type": "edit", "args": {"action": "...", "args": {...}}}]), config=config):
-    print(s)
-
-```
-
-#### Respond
-
-To "respond" to a tool call means that tool is NOT called. Rather, a tool message is appended with the content you respond with, and the updated messages list is then sent back to the model.
-
-The `args` parameter you pass back should be a string with your response.
-
-This flow shows how to respond to a tool call (assuming the tool requiring approval is called):
-
-```python
-config = {"configurable": {"thread_id": "1"}}
-for s in agent.stream({"messages": [{"role": "user", "content": message}]}, config=config):
-    print(s)
-# If this calls a tool with an interrupt, this will then return an interrupt
-# Replace the `...` with the response to use all the ToolMessage content
-for s in agent.stream(Command(resume=[{"type": "response", "args": "..."}]), config=config):
-    print(s)
-
-```
-## Async
-
-If you are passing async tools to your agent, you will want to use `from deepagents import async_create_deep_agent`
-## MCP
-
-The `deepagents` library can be ran with MCP tools. This can be achieved by using the [Langchain MCP Adapter library](https://github.com/langchain-ai/langchain-mcp-adapters).
-
-**NOTE:** You will want to use `from deepagents import async_create_deep_agent` to use the async version of `deepagents`, since MCP tools are async
-
-(To run the example below, will need to `pip install langchain-mcp-adapters`)
-
-```python
-import asyncio
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from deepagents import create_deep_agent
-
-async def main():
-    # Collect MCP tools
-    mcp_client = MultiServerMCPClient(...)
-    mcp_tools = await mcp_client.get_tools()
-
-    # Create agent
-    agent = async_create_deep_agent(tools=mcp_tools, ....)
-
-    # Stream the agent
-    async for chunk in agent.astream(
-        {"messages": [{"role": "user", "content": "what is langgraph?"}]},
-        stream_mode="values"
-    ):
-        if "messages" in chunk:
-            chunk["messages"][-1].pretty_print()
-
-asyncio.run(main())
-```
-
-## Roadmap
-- [ ] Allow users to customize full system prompt
-- [ ] Code cleanliness (type hinting, docstrings, formating)
-- [ ] Allow for more of a robust virtual filesystem
-- [ ] Create an example of a deep coding agent built on top of this
-- [ ] Benchmark the example of [deep research agent](examples/research/research_agent.py)
+MIT License
