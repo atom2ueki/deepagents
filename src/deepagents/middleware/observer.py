@@ -1,6 +1,7 @@
 """Observer middleware for emitting agent events."""
 
 from typing import Any
+from collections import deque
 from deepagents.events import get_event_bus
 from deepagents.context import AgentContext
 from langchain.agents.middleware import AgentMiddleware, AgentState
@@ -11,16 +12,19 @@ class ObserverMiddleware(AgentMiddleware[AgentState, AgentContext]):
     """Middleware that emits all agent events to the event bus.
 
     Emits events for:
-    - Messages (AI thinking, tool calls, tool responses)
-    - Todos updates
-    - Files updates (future)
+    - Messages: Deduplicated by message ID (tracks last 1000 IDs)
+    - Todos: Only emitted when changed
 
     Agent name is determined from runtime.context.agent_name (no hardcoding).
+
+    Memory-bounded: Uses deque with maxlen=1000 for message IDs to prevent memory leaks.
     """
 
     def __init__(self):
         super().__init__()
-        self._last_message_count = 0
+        # Track last 1000 emitted message IDs (bounded to prevent memory leak)
+        self._emitted_message_ids: deque[str] = deque(maxlen=1000)
+        # Track last todos to only emit when changed
         self._last_todos = None
 
     def after_model(
@@ -41,12 +45,12 @@ class ObserverMiddleware(AgentMiddleware[AgentState, AgentContext]):
             agent_bg_color = "#ffffff"
             agent_level = 0
 
-        # Emit NEW messages only (to maintain sequence)
+        # Emit NEW messages only (track by message ID)
         if "messages" in state and state["messages"]:
-            current_count = len(state["messages"])
-            if current_count > self._last_message_count:
-                # Emit only new messages
-                for message in state["messages"][self._last_message_count :]:
+            for message in state["messages"]:
+                # Each LangChain message has a unique ID
+                msg_id = message.id
+                if msg_id and msg_id not in self._emitted_message_ids:
                     event_bus.emit(
                         "message",
                         agent_name,
@@ -55,9 +59,9 @@ class ObserverMiddleware(AgentMiddleware[AgentState, AgentContext]):
                         agent_level,
                         message,
                     )
-                self._last_message_count = current_count
+                    self._emitted_message_ids.append(msg_id)
 
-        # Emit todo updates (only if changed)
+        # Emit todos only when changed
         if "todos" in state:
             current_todos = state["todos"]
             if current_todos != self._last_todos:
@@ -70,16 +74,5 @@ class ObserverMiddleware(AgentMiddleware[AgentState, AgentContext]):
                     current_todos,
                 )
                 self._last_todos = current_todos
-
-        # Emit file updates (if needed)
-        if "files" in state:
-            event_bus.emit(
-                "files",
-                agent_name,
-                agent_fg_color,
-                agent_bg_color,
-                agent_level,
-                state["files"],
-            )
 
         return None
