@@ -1,6 +1,10 @@
 """Event system for DeepAgents."""
 
 from typing import Callable, Any
+from contextvars import ContextVar
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class EventBus:
@@ -33,19 +37,31 @@ class EventBus:
         for listener in self._listeners:
             try:
                 listener(event_type, agent_name, agent_fg_color, agent_bg_color, agent_level, data)
-            except Exception:
-                # Silently ignore listener errors
-                pass
+            except Exception as e:
+                # Log the error but continue processing other listeners
+                logger.exception(
+                    f"Error in event listener {getattr(listener, '__name__', repr(listener))} for event '{event_type}': {e}"
+                )
 
     def clear(self):
         """Clear all listeners."""
         self._listeners.clear()
 
 
-# Global event bus instance
-_event_bus = EventBus()
+# Context-local event bus instance (thread-safe and async-safe)
+_event_bus_ctx: ContextVar[EventBus] = ContextVar('_event_bus_ctx')
 
 
 def get_event_bus() -> EventBus:
-    """Get the global event bus instance."""
-    return _event_bus
+    """Get the context-local event bus instance.
+
+    Each async task or thread gets its own isolated event bus for thread-safety.
+
+    Returns:
+        Context-local EventBus instance
+    """
+    bus = _event_bus_ctx.get(None)
+    if bus is None:
+        bus = EventBus()
+        _event_bus_ctx.set(bus)
+    return bus

@@ -152,6 +152,8 @@ class ToolAgent(Agent):
             fg_color=self.fg_color,
             bg_color=self.bg_color,
         )
+        # Preserve subagents reference
+        new_agent.subagents = self.subagents
         return new_agent
 
     @property
@@ -254,3 +256,16 @@ class CustomAgent(Agent):
             bg_color=self.bg_color,
         )
         return new_agent
+
+    @property
+    def graph(self):
+        """Access the underlying LangGraph CompiledStateGraph."""
+        return self._graph
+
+    def __getattr__(self, name):
+        """Delegate attribute access to underlying graph for compatibility.
+
+        This allows CustomAgent to be used transparently where CompiledStateGraph
+        is expected (e.g., accessing .nodes, .stream_channels, etc.).
+        """
+        return getattr(self._graph, name)

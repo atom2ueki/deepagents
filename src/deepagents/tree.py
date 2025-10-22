@@ -5,6 +5,7 @@ without manual level calculation.
 """
 
 from typing import Optional, List
+from contextvars import ContextVar
 
 
 class AgentNode:
@@ -120,14 +121,20 @@ class AgentTree:
         self._current = None
 
 
-# Global agent tree instance
-_agent_tree = AgentTree()
+# Context-local agent tree instance (thread-safe and async-safe)
+_agent_tree_ctx: ContextVar[AgentTree] = ContextVar('_agent_tree_ctx')
 
 
 def get_agent_tree() -> AgentTree:
-    """Get the global agent tree instance.
+    """Get the context-local agent tree instance.
+
+    Each async task or thread gets its own isolated tree for thread-safety.
 
     Returns:
-        Global AgentTree instance
+        Context-local AgentTree instance
     """
-    return _agent_tree
+    tree = _agent_tree_ctx.get(None)
+    if tree is None:
+        tree = AgentTree()
+        _agent_tree_ctx.set(tree)
+    return tree
